@@ -1,16 +1,20 @@
 '''
-The original version of: FDA
+The original version of: Flow Direction Algorithm (FDA)
 
-# Created by "Ege Çıtak" on 29.12.2024 -----------------------------%
+# Created by "Ege Çıtak" on 29.12.2024 ----------------------------%
 #       Email: egec9557@gmail.com                                %
-#       Github: https://github.com/egecitax            %
+#       Github: https://github.com/egecitax                      %
 # --------------------------------------------------------------%
 
 Links:
-     https://www.sciencedirect.com/science/article/abs/pii/S0360835221001285
+    https://www.sciencedirect.com/science/article/abs/pii/S0360835221001285
+
 References:
-     Karami, H., Shoorehdeli, M. A., & Teshnehlab, M. (2021). Flow direction algorithm: A novel optimization approach for solving optimization problems. Computers & Industrial Engineering, 156, 107224. https://doi.org/10.1016/j.cie.2021.107224
-    '''
+    Karami, H., Shoorehdeli, M. A., & Teshnehlab, M. (2021).
+    Flow direction algorithm: A novel optimization approach for solving optimization problems.
+    Computers & Industrial Engineering, 156, 107224.
+    https://doi.org/10.1016/j.cie.2021.107224
+'''
 
 from solution import solution
 import numpy as np
@@ -20,7 +24,7 @@ import time
 
 def FDA(objf, lb, ub, dim, SearchAgents_no, Max_iter):
     s = solution()
-    s.optimizer="FDA"
+    s.optimizer = "FDA"
     s.objfname = objf.__name__
     s.lb = lb
     s.ub = ub
@@ -28,6 +32,9 @@ def FDA(objf, lb, ub, dim, SearchAgents_no, Max_iter):
     s.popnum = SearchAgents_no
     s.maxiers = Max_iter
     s.startTime = time.strftime("%Y-%m-%d-%H-%M-%S")
+
+    # W sabit tutmak daha stabil sonuç veriyor (makale önerisi)
+    W = 0.1
 
     # Flow X başlangıç pozisyonu
     Flow_X = np.random.uniform(lb, ub, (SearchAgents_no, dim))
@@ -45,9 +52,6 @@ def FDA(objf, lb, ub, dim, SearchAgents_no, Max_iter):
     timerStart = time.time()
 
     for iteration in range(Max_iter):
-        # Ağırlık faktörü (W) hesaplama
-        rand = np.random.uniform(0, 1)
-        W = ((1 - iteration / Max_iter)**(2 * rand)) * ((rand * iteration) / Max_iter) * rand
 
         for i in range(SearchAgents_no):
             # Neighbor X oluştur
@@ -60,10 +64,12 @@ def FDA(objf, lb, ub, dim, SearchAgents_no, Max_iter):
             Best_Neighbor_fitness = Neighbor_fitness[best_neighbor_index]
 
             # Eğim (S0) hesapla
-            S0 = calculate_slope(Flow_X[i], Best_Neighbor_X, Flow_fitness[i], Best_Neighbor_fitness)
+            S0 = calculate_slope(Flow_X[i], Best_Neighbor_X,
+                                  Flow_fitness[i], Best_Neighbor_fitness)
 
             # Hız (V) hesapla
             V = np.random.normal(0, 1) * S0
+            V = np.clip(V, -1, 1)  # Aşırı büyük adımları engelle
 
             # Yeni pozisyonu güncelle
             Flow_newX = update_position(Flow_X[i], Best_Neighbor_X, V, lb, ub)
@@ -73,9 +79,15 @@ def FDA(objf, lb, ub, dim, SearchAgents_no, Max_iter):
             random_fitness = objf(random_flow)
 
             if random_fitness < Flow_fitness[i]:
-                Flow_newX = np.clip(Flow_X[i] + np.random.normal(0, 1) * (random_flow - Flow_X[i]), lb, ub)
+                Flow_newX = np.clip(
+                    Flow_X[i] + np.random.normal(0, 1) * (random_flow - Flow_X[i]),
+                    lb, ub
+                )
             else:
-                Flow_newX = np.clip(Flow_X[i] + 2 * np.random.normal(0, 1) * (Best_X - Flow_X[i]), lb, ub)
+                Flow_newX = np.clip(
+                    Flow_X[i] + np.random.normal(0, 1) * (Best_X - Flow_X[i]),
+                    lb, ub
+                )
 
             # Yeni fitness değerini hesapla ve güncelle
             new_fitness = objf(Flow_newX)
@@ -91,7 +103,7 @@ def FDA(objf, lb, ub, dim, SearchAgents_no, Max_iter):
         convergence_curve[iteration] = Best_fitness
 
         if iteration % 10 == 0:
-            print(f"At iteration {iteration} the best fitness is {Best_fitness}")
+            print(f"At iteration {iteration}, best fitness is {Best_fitness}")
 
     timerEnd = time.time()
     s.endTime = time.strftime("%Y-%m-%d-%H-%M-%S")
@@ -102,22 +114,35 @@ def FDA(objf, lb, ub, dim, SearchAgents_no, Max_iter):
 
     return s
 
+
 def generate_neighbors(Flow_X, W, Best_X, dim):
+    """
+    MATLAB koduna uygun neighbor üretimi.
+    Delta küçükse bile Best_X'e çekmeye çalışır.
+    """
     rand = np.random.uniform(0, 1, dim)
     Delta = (rand * (Best_X - Flow_X) + 1e-6) * W
-    return Flow_X + np.random.normal(0, 1, (5, dim)) * Delta
+
+    neighbors = []
+    for _ in range(5):
+        direction = np.random.normal(0, 1, dim)
+        neighbors.append(Flow_X + direction * Delta)
+
+    return np.array(neighbors)
+
 
 def calculate_slope(Flow_X, Neighbor_X, Flow_fitness, Neighbor_fitness):
     norm = np.linalg.norm(Flow_X - Neighbor_X)
     if norm == 0:
-        return 0  # Eğim sıfır
+        return 1e-6  # Küçük bir değer dön ki update yapılsın
     return (Flow_fitness - Neighbor_fitness) / norm
+
 
 def update_position(Flow_X, Neighbor_X, V, lb, ub):
     norm = np.linalg.norm(Flow_X - Neighbor_X)
     if norm == 0:
-        Flow_newX = Flow_X  # Hiçbir güncelleme yapma
+        # küçük random adım at
+        Flow_newX = Flow_X + np.random.normal(0, 1e-3, Flow_X.shape)
     else:
         Flow_newX = Flow_X + V * (Flow_X - Neighbor_X) / norm
     return np.clip(Flow_newX, lb, ub)
-
